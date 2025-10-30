@@ -1,0 +1,13 @@
+{
+  "chat": {
+    "chatId": "00000000-0000-0000-0000-00002c19afe6",
+    "sessionId": "3782d0e6-0ba2-4969-a867-d5c4448eab23",
+    "messageId": "4782d0e6-0ba2-4969-a867-d5c4448eab43"
+  },
+  "messages": [
+    {
+      "role": "USER",
+      "content": "Как получить доступ в jira"
+    }
+  ]
+}

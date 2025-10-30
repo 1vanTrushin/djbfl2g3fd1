@@ -1,9 +1,12 @@
-com\example\chatapp\config\ChatGraphConfig.class
-com\example\chatapp\state\ChatAgentState.class
-com\example\chatapp\service\ChatService.class
+com\example\chatapp\model\ChatInfo.class
 com\example\chatapp\controller\ChatController.class
 com\example\chatapp\service\ChatCheckpointService.class
 com\example\chatapp\controller\ChatCheckpointController.class
 com\example\chatapp\model\ChatCheckpoint.class
+com\example\chatapp\model\ChatMessage.class
+com\example\chatapp\model\ChatRequest.class
+com\example\chatapp\config\ChatGraphConfig.class
+com\example\chatapp\state\ChatAgentState.class
+com\example\chatapp\service\ChatService.class
 com\example\chatapp\ChatApplication.class
 com\example\chatapp\config\LangGraphConfig.class

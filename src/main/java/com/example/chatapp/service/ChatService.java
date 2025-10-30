@@ -1,13 +1,16 @@
 package com.example.chatapp.service;
 
+import com.example.chatapp.model.ChatCheckpoint;
+import com.example.chatapp.model.ChatMessage;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Service
+@ConditionalOnBean(name = "chatClient")
 public class ChatService {
 
     private final ChatCheckpointService checkpointService;
@@ -18,27 +21,31 @@ public class ChatService {
         this.chatClient = chatClient;
     }
 
-    public String processMessage(String threadId, String userMessage) {
+    public String processMessage(String chatId, String sessionId, String messageId, String userMessage) {
         // Load existing context
-        Map<String, Object> context = checkpointService.loadCheckpoint(threadId);
+        ChatCheckpoint checkpoint = checkpointService.loadCheckpoint(sessionId);
+        
+        List<ChatMessage> messages;
+        if (checkpoint != null) {
+            messages = new ArrayList<>(checkpoint.getMessages());
+        } else {
+            messages = new ArrayList<>();
+        }
 
-        // Add new message to context
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> messages = (List<Map<String, Object>>) context.getOrDefault("messages", new ArrayList<>());
-        messages.add(Map.of("role", "user", "content", userMessage));
+        // Add new user message
+        messages.add(new ChatMessage("USER", userMessage));
 
         // Generate AI response using Spring AI ChatClient
         String aiResponse = chatClient.prompt()
                 .user(userMessage)
                 .call()
                 .content();
-        messages.add(Map.of("role", "assistant", "content", aiResponse));
+        
+        // Add assistant response
+        messages.add(new ChatMessage("ASSISTANT", aiResponse));
 
-        // Update context
-        context.put("messages", messages);
-
-        // Save checkpoint
-        checkpointService.saveCheckpoint(threadId, context);
+        // Save checkpoint with updated messages
+        checkpointService.saveCheckpoint(chatId, sessionId, messageId, messages);
 
         return aiResponse;
     }

@@ -1,15 +1,16 @@
 package com.example.chatapp.controller;
 
 import com.example.chatapp.model.ChatCheckpoint;
+import com.example.chatapp.model.ChatRequest;
 import com.example.chatapp.service.ChatCheckpointService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/chat/checkpoints")
+@RequestMapping("/api/chat")
 public class ChatCheckpointController {
 
     private final ChatCheckpointService checkpointService;
@@ -19,67 +20,79 @@ public class ChatCheckpointController {
     }
 
     /**
-     * Save a chat checkpoint
-     * POST /api/chat/checkpoints
-     * Body: {"threadId": "thread123", "context": {"messages": [...], "state": {...}}}
+     * Save or update a chat checkpoint
+     * POST /api/chat/message
+     * Body: {"chat": {"chatId": "...", "sessionId": "...", "messageId": "..."}, "messages": [...]}
      */
-    @PostMapping
-    public ResponseEntity<ChatCheckpoint> saveCheckpoint(@RequestBody Map<String, Object> request) {
-        String threadId = (String) request.get("threadId");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> context = (Map<String, Object>) request.get("context");
-
-        if (threadId == null || context == null) {
+    @PostMapping("/message")
+    public ResponseEntity<ChatCheckpoint> saveMessage(@RequestBody ChatRequest request) {
+        if (request.getChat() == null || request.getMessages() == null) {
             return ResponseEntity.badRequest().build();
         }
 
-        ChatCheckpoint saved = checkpointService.saveCheckpoint(threadId, context);
+        String chatId = request.getChat().getChatId();
+        String sessionId = request.getChat().getSessionId();
+        String messageId = request.getChat().getMessageId();
+
+        if (chatId == null || sessionId == null || messageId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        ChatCheckpoint saved = checkpointService.saveCheckpoint(chatId, sessionId, messageId, request.getMessages());
         return ResponseEntity.ok(saved);
     }
 
     /**
-     * Load a chat checkpoint
-     * GET /api/chat/checkpoints/{threadId}
+     * Load a chat checkpoint by session ID
+     * GET /api/chat/session/{sessionId}
      */
-    @GetMapping("/{threadId}")
-    public ResponseEntity<Map<String, Object>> loadCheckpoint(@PathVariable String threadId) {
-        Map<String, Object> context = checkpointService.loadCheckpoint(threadId);
-        if (context.isEmpty()) {
+    @GetMapping("/session/{sessionId}")
+    public ResponseEntity<ChatCheckpoint> loadSession(@PathVariable String sessionId) {
+        ChatCheckpoint checkpoint = checkpointService.loadCheckpoint(sessionId);
+        if (checkpoint == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(context);
+        return ResponseEntity.ok(checkpoint);
     }
 
     /**
-     * Get checkpoint history for a thread
-     * GET /api/chat/checkpoints/{threadId}/history
+     * Check if session exists
+     * HEAD /api/chat/session/{sessionId}
      */
-    @GetMapping("/{threadId}/history")
-    public ResponseEntity<List<Map<String, Object>>> getCheckpointHistory(@PathVariable String threadId) {
-        List<Map<String, Object>> history = checkpointService.getCheckpointHistory(threadId);
-        if (history.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(history);
+    @RequestMapping(value = "/session/{sessionId}", method = RequestMethod.HEAD)
+    public ResponseEntity<Void> sessionExists(@PathVariable String sessionId) {
+        boolean exists = checkpointService.checkpointExists(sessionId);
+        return exists ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
     /**
-     * Delete all checkpoints for a thread
-     * DELETE /api/chat/checkpoints/{threadId}
+     * Delete session checkpoint
+     * DELETE /api/chat/session/{sessionId}
      */
-    @DeleteMapping("/{threadId}")
-    public ResponseEntity<Void> deleteCheckpoints(@PathVariable String threadId) {
-        checkpointService.deleteCheckpoints(threadId);
+    @DeleteMapping("/session/{sessionId}")
+    public ResponseEntity<Void> deleteSession(@PathVariable String sessionId) {
+        checkpointService.deleteCheckpoint(sessionId);
         return ResponseEntity.ok().build();
     }
 
     /**
-     * Check if checkpoint exists
-     * HEAD /api/chat/checkpoints/{threadId}
+     * Reset context - create a new session ID
+     * POST /api/chat/reset-context
+     * Body: {"chatId": "..."}
      */
-    @RequestMapping(value = "/{threadId}", method = RequestMethod.HEAD)
-    public ResponseEntity<Void> checkpointExists(@PathVariable String threadId) {
-        boolean exists = checkpointService.checkpointExists(threadId);
-        return exists ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+    @PostMapping("/reset-context")
+    public ResponseEntity<Map<String, String>> resetContext(@RequestBody Map<String, String> request) {
+        String chatId = request.get("chatId");
+        if (chatId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String newSessionId = checkpointService.createNewSessionId();
+        
+        Map<String, String> response = new HashMap<>();
+        response.put("chatId", chatId);
+        response.put("sessionId", newSessionId);
+        
+        return ResponseEntity.ok(response);
     }
 }

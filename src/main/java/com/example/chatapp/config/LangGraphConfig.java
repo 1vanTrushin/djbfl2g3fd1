@@ -3,7 +3,6 @@ package com.example.chatapp.config;
 import com.example.chatapp.state.ChatAgentState;
 import org.bsc.langgraph4j.checkpoint.PostgresSaver;
 import org.bsc.langgraph4j.serializer.std.ObjectStreamStateSerializer;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -46,15 +45,10 @@ public class LangGraphConfig {
                     .password(password)
                     .database(database)
                     .stateSerializer(stateSerializer)
-                    .createTables(true) // Automatically create LangGraph4j tables
+                    .createTables(false) // Tables already created manually
                     .build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to create PostgresSaver", e);
         }
-    }
-
-    @Bean
-    public ChatClient chatClient(ChatClient.Builder builder) {
-        return builder.build();
     }
 }

@@ -1,47 +1,57 @@
 package com.example.chatapp.model;
 
 import java.time.Instant;
-import java.util.Map;
+import java.util.List;
 
 public class ChatCheckpoint {
-    private String threadId;
-    private String checkpointId;
-    private Map<String, Object> context;
+    private String chatId;      // Постоянный ID пользователя
+    private String sessionId;   // ID сессии чата
+    private String messageId;   // ID последнего сообщения
+    private List<ChatMessage> messages;
     private Instant createdAt;
 
     // Constructors
     public ChatCheckpoint() {}
 
-    public ChatCheckpoint(String threadId, String checkpointId, Map<String, Object> context) {
-        this.threadId = threadId;
-        this.checkpointId = checkpointId;
-        this.context = context;
+    public ChatCheckpoint(String chatId, String sessionId, String messageId, List<ChatMessage> messages) {
+        this.chatId = chatId;
+        this.sessionId = sessionId;
+        this.messageId = messageId;
+        this.messages = messages;
         this.createdAt = Instant.now();
     }
 
     // Getters and Setters
-    public String getThreadId() {
-        return threadId;
+    public String getChatId() {
+        return chatId;
     }
 
-    public void setThreadId(String threadId) {
-        this.threadId = threadId;
+    public void setChatId(String chatId) {
+        this.chatId = chatId;
     }
 
-    public String getCheckpointId() {
-        return checkpointId;
+    public String getSessionId() {
+        return sessionId;
     }
 
-    public void setCheckpointId(String checkpointId) {
-        this.checkpointId = checkpointId;
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
     }
 
-    public Map<String, Object> getContext() {
-        return context;
+    public String getMessageId() {
+        return messageId;
     }
 
-    public void setContext(Map<String, Object> context) {
-        this.context = context;
+    public void setMessageId(String messageId) {
+        this.messageId = messageId;
+    }
+
+    public List<ChatMessage> getMessages() {
+        return messages;
+    }
+
+    public void setMessages(List<ChatMessage> messages) {
+        this.messages = messages;
     }
 
     public Instant getCreatedAt() {

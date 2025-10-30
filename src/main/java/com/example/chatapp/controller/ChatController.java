@@ -1,13 +1,17 @@
 package com.example.chatapp.controller;
 
+import com.example.chatapp.model.ChatRequest;
 import com.example.chatapp.service.ChatService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/chat")
+@ConditionalOnBean(name = "chatClient")
 public class ChatController {
 
     private final ChatService chatService;
@@ -17,20 +21,34 @@ public class ChatController {
     }
 
     /**
-     * Process a chat message and save checkpoint
-     * POST /api/chat/message
-     * Body: {"threadId": "thread123", "message": "Hello"}
+     * Process a chat message with AI and save checkpoint
+     * POST /api/chat/process
+     * Body: {"chat": {"chatId": "...", "sessionId": "...", "messageId": "..."}, "messages": [...]}
+     * NOTE: Requires OpenAI API key to be configured
      */
-    @PostMapping("/message")
-    public ResponseEntity<String> processMessage(@RequestBody Map<String, String> request) {
-        String threadId = request.get("threadId");
-        String message = request.get("message");
-
-        if (threadId == null || message == null) {
+    @PostMapping("/process")
+    public ResponseEntity<Map<String, String>> processMessage(@RequestBody ChatRequest request) {
+        if (request.getChat() == null || request.getMessages() == null || request.getMessages().isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
 
-        String response = chatService.processMessage(threadId, message);
+        String chatId = request.getChat().getChatId();
+        String sessionId = request.getChat().getSessionId();
+        String messageId = request.getChat().getMessageId();
+
+        if (chatId == null || sessionId == null || messageId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // Get the last user message
+        String userMessage = request.getMessages().get(request.getMessages().size() - 1).getContent();
+
+        String aiResponse = chatService.processMessage(chatId, sessionId, messageId, userMessage);
+        
+        Map<String, String> response = new HashMap<>();
+        response.put("response", aiResponse);
+        response.put("sessionId", sessionId);
+        
         return ResponseEntity.ok(response);
     }
 }

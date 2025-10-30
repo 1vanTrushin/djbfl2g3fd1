@@ -36,20 +36,21 @@ public class ChatGraphConfig {
             // Node: Process incoming message
             stateGraph.addNode("process_message", node_async(state -> {
                 // This node can be extended to process messages through LLM
-                // For now, it just passes the message through
+                // For now, it just passes the message and context through
                 return Map.of(
                         ChatAgentState.MESSAGES_KEY, state.messages(),
+                        ChatAgentState.CONTEXT_KEY, state.context(),
                         ChatAgentState.THREAD_ID_KEY, state.threadId()
                 );
             }));
 
             // Node: Save context after processing
             stateGraph.addNode("save_context", node_async(state -> {
-                // Update context with processed data
-                Map<String, Object> updatedContext = Map.of(
-                        "lastProcessedAt", System.currentTimeMillis(),
-                        "messageCount", state.messages().size()
-                );
+                // Update context with processed data while preserving existing data
+                Map<String, Object> existingContext = state.context();
+                Map<String, Object> updatedContext = new java.util.HashMap<>(existingContext);
+                updatedContext.put("lastProcessedAt", System.currentTimeMillis());
+                updatedContext.put("messageCount", state.messages().size());
                 
                 return Map.of(
                         ChatAgentState.CONTEXT_KEY, updatedContext
