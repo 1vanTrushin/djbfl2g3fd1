@@ -1,33 +1,32 @@
 package com.example.chatapp.service;
 
+import com.example.chatapp.entity.ChatSessionEntity;
+import com.example.chatapp.memory.PostgresChatMemory;
 import com.example.chatapp.model.ChatCheckpoint;
 import com.example.chatapp.model.ChatMessage;
-import com.example.chatapp.state.ChatAgentState;
-import org.bsc.langgraph4j.CompiledGraph;
-import org.bsc.langgraph4j.RunnableConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 /**
- * Service for managing chat checkpoints using LangGraph4j with PostgreSQL persistence
+ * Service for managing chat checkpoints using Spring AI ChatMemory with PostgreSQL
  * Uses sessionId as the main identifier for checkpoint isolation
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class ChatCheckpointService {
 
-    private static final Logger logger = LoggerFactory.getLogger(ChatCheckpointService.class);
-
-    private final CompiledGraph<ChatAgentState> chatGraph;
-
-    public ChatCheckpointService(CompiledGraph<ChatAgentState> chatGraph) {
-        this.chatGraph = chatGraph;
-    }
+    private final PostgresChatMemory chatMemory;
 
     /**
-     * Save a chat checkpoint with messages using LangGraph4j
+     * Save a chat checkpoint with messages using Spring AI ChatMemory
      * @param chatId The permanent user chat ID
      * @param sessionId The session ID for checkpoint isolation
      * @param messageId The message ID
@@ -35,89 +34,63 @@ public class ChatCheckpointService {
      * @return The saved checkpoint
      */
     public ChatCheckpoint saveCheckpoint(String chatId, String sessionId, String messageId, List<ChatMessage> messages) {
-        logger.debug("Saving checkpoint for chatId: {}, sessionId: {}", chatId, sessionId);
+        log.debug("Saving checkpoint for chatId: {}, sessionId: {}, messages: {}", chatId, sessionId, messages.size());
         
         try {
-            // Prepare initial state
-            Map<String, Object> initialState = new HashMap<>();
-            initialState.put(ChatAgentState.THREAD_ID_KEY, sessionId); // Use sessionId as threadId for LangGraph4j
-            
-            // Convert ChatMessage objects to maps for LangGraph4j
-            List<Map<String, Object>> messagesMaps = new ArrayList<>();
+            // Convert ChatMessage to Spring AI Message
+            List<Message> aiMessages = new ArrayList<>();
             for (ChatMessage msg : messages) {
-                Map<String, Object> msgMap = new HashMap<>();
-                msgMap.put("role", msg.getRole());
-                msgMap.put("content", msg.getContent());
-                messagesMaps.add(msgMap);
+                Message aiMessage = convertToSpringAiMessage(msg);
+                aiMessages.add(aiMessage);
             }
-            initialState.put(ChatAgentState.MESSAGES_KEY, messagesMaps);
-            
-            // Add metadata
-            Map<String, Object> context = new HashMap<>();
-            context.put("chatId", chatId);
-            context.put("messageId", messageId);
-            initialState.put(ChatAgentState.CONTEXT_KEY, context);
 
-            // Configure with sessionId as thread_id for checkpoint isolation
-            var runnableConfig = RunnableConfig.builder()
-                    .threadId(sessionId)
-                    .build();
+            // Save to database using ChatMemory
+            chatMemory.add(chatId, sessionId, messageId, aiMessages);
 
-            // Invoke the graph - this will save checkpoint to PostgreSQL
-            chatGraph.invoke(initialState, runnableConfig);
-
-            logger.debug("Checkpoint saved for sessionId: {}", sessionId);
+            log.info("Successfully saved checkpoint for sessionId: {} with {} messages", sessionId, messages.size());
 
             // Return the checkpoint model
             return new ChatCheckpoint(chatId, sessionId, messageId, messages);
             
         } catch (Exception e) {
-            logger.error("Error saving checkpoint for sessionId: {}", sessionId, e);
+            log.error("Error saving checkpoint for sessionId: {}", sessionId, e);
             throw new RuntimeException("Failed to save checkpoint", e);
         }
     }
 
     /**
-     * Load a chat checkpoint by session ID using LangGraph4j
+     * Load a chat checkpoint by session ID using Spring AI ChatMemory
      * @param sessionId The session ID to load
      * @return The checkpoint data or null if not found
      */
     public ChatCheckpoint loadCheckpoint(String sessionId) {
-        logger.debug("Loading checkpoint for sessionId: {}", sessionId);
+        log.debug("Loading checkpoint for sessionId: {}", sessionId);
         
         try {
-            var runnableConfig = RunnableConfig.builder()
-                    .threadId(sessionId)
-                    .build();
-
-            // Get the last saved state for this session
-            var lastState = chatGraph.lastStateOf(runnableConfig);
+            // Get messages from ChatMemory
+            List<Message> aiMessages = chatMemory.get(sessionId, Integer.MAX_VALUE);
             
-            if (lastState.isPresent()) {
-                var stateSnapshot = lastState.get();
-                var state = stateSnapshot.state();
-                
-                // Extract messages
-                List<ChatMessage> messages = new ArrayList<>();
-                for (Map<String, Object> msgMap : state.messages()) {
-                    String role = (String) msgMap.get("role");
-                    String content = (String) msgMap.get("content");
-                    messages.add(new ChatMessage(role, content));
-                }
-                
-                // Extract metadata
-                String chatId = (String) state.context().get("chatId");
-                String messageId = (String) state.context().get("messageId");
-                
-                logger.debug("Loaded checkpoint for sessionId: {} with {} messages", sessionId, messages.size());
-                return new ChatCheckpoint(chatId, sessionId, messageId, messages);
+            if (aiMessages.isEmpty()) {
+                log.debug("No checkpoint found for sessionId: {}", sessionId);
+                return null;
             }
-            
-            logger.debug("No checkpoint found for sessionId: {}", sessionId);
-            return null;
+
+            // Convert Spring AI Messages to ChatMessage
+            List<ChatMessage> messages = new ArrayList<>();
+            for (Message aiMsg : aiMessages) {
+                ChatMessage msg = convertFromSpringAiMessage(aiMsg);
+                messages.add(msg);
+            }
+
+            // Get session info to retrieve chatId
+            List<ChatSessionEntity> sessions = chatMemory.getSessionsForChat(sessionId);
+            String chatId = sessions.isEmpty() ? sessionId : sessions.get(0).getChatId();
+
+            log.info("Loaded checkpoint for sessionId: {} with {} messages", sessionId, messages.size());
+            return new ChatCheckpoint(chatId, sessionId, null, messages);
             
         } catch (Exception e) {
-            logger.error("Error loading checkpoint for sessionId: {}", sessionId, e);
+            log.error("Error loading checkpoint for sessionId: {}", sessionId, e);
             return null;
         }
     }
@@ -125,14 +98,11 @@ public class ChatCheckpointService {
     /**
      * Get all sessions for a chat ID
      * @param chatId The chat ID
-     * @return List of session IDs
+     * @return List of session entities
      */
-    public List<String> getSessionsForChat(String chatId) {
-        logger.debug("Getting sessions for chatId: {}", chatId);
-        // Note: This requires additional implementation to track chat-to-session mappings
-        // For now, returning empty list
-        logger.warn("getSessionsForChat not fully implemented - requires separate mapping storage");
-        return new ArrayList<>();
+    public List<ChatSessionEntity> getSessionsForChat(String chatId) {
+        log.debug("Getting sessions for chatId: {}", chatId);
+        return chatMemory.getSessionsForChat(chatId);
     }
 
     /**
@@ -142,13 +112,9 @@ public class ChatCheckpointService {
      */
     public boolean checkpointExists(String sessionId) {
         try {
-            var runnableConfig = RunnableConfig.builder()
-                    .threadId(sessionId)
-                    .build();
-
-            return chatGraph.lastStateOf(runnableConfig).isPresent();
+            return chatMemory.exists(sessionId);
         } catch (Exception e) {
-            logger.error("Error checking checkpoint existence for sessionId: {}", sessionId, e);
+            log.error("Error checking checkpoint existence for sessionId: {}", sessionId, e);
             return false;
         }
     }
@@ -158,19 +124,49 @@ public class ChatCheckpointService {
      * @param sessionId The session ID to delete checkpoint for
      */
     public void deleteCheckpoint(String sessionId) {
-        logger.debug("Releasing session resources for: {}", sessionId);
-        // Note: LangGraph4j's PostgresSaver doesn't have a direct delete method
-        // Checkpoints are automatically managed by the saver
-        logger.warn("Delete operation not fully implemented with LangGraph4j - checkpoints remain in database");
+        log.debug("Deleting checkpoint for sessionId: {}", sessionId);
+        try {
+            chatMemory.clear(sessionId);
+            log.info("Successfully deleted checkpoint for sessionId: {}", sessionId);
+        } catch (Exception e) {
+            log.error("Error deleting checkpoint for sessionId: {}", sessionId, e);
+            throw new RuntimeException("Failed to delete checkpoint", e);
+        }
     }
 
     /**
      * Create a new session ID for context reset
+     * @param chatId The chat ID
      * @return New UUID session ID
      */
-    public String createNewSessionId() {
-        String newSessionId = UUID.randomUUID().toString();
-        logger.debug("Created new sessionId: {}", newSessionId);
+    public String createNewSessionId(String chatId) {
+        String newSessionId = chatMemory.createNewSession(chatId);
+        log.info("Created new sessionId: {} for chatId: {}", newSessionId, chatId);
         return newSessionId;
+    }
+
+    /**
+     * Convert ChatMessage to Spring AI Message
+     */
+    private Message convertToSpringAiMessage(ChatMessage msg) {
+        return switch (msg.getRole().toUpperCase()) {
+            case "USER" -> new UserMessage(msg.getContent());
+            case "ASSISTANT" -> new AssistantMessage(msg.getContent());
+            case "SYSTEM" -> new SystemMessage(msg.getContent());
+            default -> new UserMessage(msg.getContent());
+        };
+    }
+
+    /**
+     * Convert Spring AI Message to ChatMessage
+     */
+    private ChatMessage convertFromSpringAiMessage(Message aiMsg) {
+        String role = switch (aiMsg.getMessageType()) {
+            case USER -> "USER";
+            case ASSISTANT -> "ASSISTANT";
+            case SYSTEM -> "SYSTEM";
+            default -> "USER";
+        };
+        return new ChatMessage(role, aiMsg.getContent());
     }
 }

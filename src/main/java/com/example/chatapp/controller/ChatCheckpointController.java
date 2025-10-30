@@ -87,7 +87,7 @@ public class ChatCheckpointController {
             return ResponseEntity.badRequest().build();
         }
 
-        String newSessionId = checkpointService.createNewSessionId();
+        String newSessionId = checkpointService.createNewSessionId(chatId);
         
         Map<String, String> response = new HashMap<>();
         response.put("chatId", chatId);
